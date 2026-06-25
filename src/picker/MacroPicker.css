@@ -1,0 +1,171 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: transparent !important;
+}
+
+body {
+  background: transparent !important;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#root {
+  background: transparent !important;
+  height: 100%;
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  width: 540px;
+  height: 420px;
+  background: rgba(28, 28, 30, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  color: #fff;
+  user-select: none;
+}
+
+/* Search bar */
+.picker-search {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.picker-search-icon {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 10px;
+  line-height: 1;
+}
+
+.picker-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  color: #fff;
+  caret-color: #0a84ff;
+}
+
+.picker-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* List */
+.picker-list {
+  flex: 1;
+  list-style: none;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.picker-list::-webkit-scrollbar {
+  width: 4px;
+}
+.picker-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 12px;
+  cursor: pointer;
+  gap: 3px;
+  border-radius: 8px;
+  margin: 2px 6px;
+  transition: background 0.1s;
+}
+
+.picker-item.selected {
+  background: rgba(10, 132, 255, 0.3);
+}
+
+.picker-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.picker-item-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-item-preview {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.picker-item-shortcut {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* Empty state */
+.picker-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 14px;
+}
+
+/* Footer */
+.picker-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+.picker-settings-btn {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.picker-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
