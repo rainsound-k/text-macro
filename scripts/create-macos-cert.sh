@@ -13,8 +13,9 @@ set -euo pipefail
 
 IDENTITY="${1:-TextMacro Self Signed}"
 WORKDIR="$(mktemp -d)"
-P12_PASS="$(openssl rand -base64 18)"
-KEYCHAIN_PW="$(openssl rand -base64 18)"
+# Hex passwords (no +,/,= ) so they paste cleanly and need no shell escaping.
+P12_PASS="$(openssl rand -hex 18)"
+KEYCHAIN_PW="$(openssl rand -hex 18)"
 
 # 1) Self-signed certificate with the Code Signing extended key usage.
 cat > "$WORKDIR/openssl.cnf" <<CNF
