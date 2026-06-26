@@ -41,40 +41,43 @@ openssl pkcs12 -export \
   -out "$WORKDIR/cert.p12" -name "$IDENTITY" \
   -passout "pass:${P12_PASS}" >/dev/null 2>&1
 
-# base64 with NO line wrapping, so it's a single clean blob (no stray newlines
-# or marker lines that could get pasted into the secret by mistake).
+# base64 with NO line wrapping, so it's a single clean blob.
 B64="$(base64 < "$WORKDIR/cert.p12" | tr -d '\n')"
 
-# Save it to a file and copy it straight to the clipboard so there's nothing to
-# hand-select. The earlier "decode base64" failures came from copying the
-# surrounding ----- marker lines; this avoids that entirely.
+# Write ALL FOUR secret values to files from THIS single run, with no trailing
+# newline (printf '%s'). The repeated "wrong password" failures came from mixing
+# values across runs (cert from a file, password from old terminal scrollback).
+# Copy each secret straight from its file so they always match.
 OUT_DIR="${HOME}/textmacro-signing"
 mkdir -p "$OUT_DIR"
-printf '%s' "$B64" > "$OUT_DIR/APPLE_CERTIFICATE.txt"
-printf '%s' "$B64" | pbcopy 2>/dev/null && COPIED="yes" || COPIED="no"
+printf '%s' "$IDENTITY"     > "$OUT_DIR/APPLE_SIGNING_IDENTITY.txt"
+printf '%s' "$P12_PASS"     > "$OUT_DIR/APPLE_CERTIFICATE_PASSWORD.txt"
+printf '%s' "$KEYCHAIN_PW"  > "$OUT_DIR/KEYCHAIN_PASSWORD.txt"
+printf '%s' "$B64"          > "$OUT_DIR/APPLE_CERTIFICATE.txt"
 
 cat <<EOF
 
 ✅  Self-signed code-signing certificate created: "${IDENTITY}"
 
-Register these 4 GitHub repository secrets
-(Settings → Secrets and variables → Actions → New repository secret):
+All 4 secret values were written (no trailing newline) to:
+  ${OUT_DIR}/
 
-  1. APPLE_SIGNING_IDENTITY        ${IDENTITY}
-  2. APPLE_CERTIFICATE_PASSWORD    ${P12_PASS}
-  3. KEYCHAIN_PASSWORD             ${KEYCHAIN_PW}
-  4. APPLE_CERTIFICATE             (base64 — see below)
+Set each GitHub secret by copying its file to the clipboard, then ⌘V into the
+secret box (Settings → Secrets and variables → Actions). Run these one at a time:
 
-  ⚠️  For APPLE_CERTIFICATE, paste ONLY the base64 text. Do NOT include any
-      "-----" lines. To avoid mistakes it has been:
-        • copied to your clipboard: ${COPIED}  (just ⌘V into the secret box)
-        • saved to: ${OUT_DIR}/APPLE_CERTIFICATE.txt
-          (or run:  pbcopy < "${OUT_DIR}/APPLE_CERTIFICATE.txt" )
+  pbcopy < "${OUT_DIR}/APPLE_SIGNING_IDENTITY.txt"      # → APPLE_SIGNING_IDENTITY
+  pbcopy < "${OUT_DIR}/APPLE_CERTIFICATE_PASSWORD.txt"  # → APPLE_CERTIFICATE_PASSWORD
+  pbcopy < "${OUT_DIR}/KEYCHAIN_PASSWORD.txt"           # → KEYCHAIN_PASSWORD
+  pbcopy < "${OUT_DIR}/APPLE_CERTIFICATE.txt"           # → APPLE_CERTIFICATE
+
+⚠️  All four MUST come from THIS run. Don't reuse old values — the password and
+    certificate are a matched pair and won't import if mixed.
 
 Optional — sign LOCAL builds too:
   cp "$WORKDIR/cert.p12" ~/textmacro-cert.p12
-  security import ~/textmacro-cert.p12 -P "${P12_PASS}" -T /usr/bin/codesign
+  security import ~/textmacro-cert.p12 -P "\$(cat "${OUT_DIR}/APPLE_CERTIFICATE_PASSWORD.txt")" -T /usr/bin/codesign
   APPLE_SIGNING_IDENTITY="${IDENTITY}" npm run tauri build
 
-Temp files: $WORKDIR  (delete when done:  rm -rf "$WORKDIR")
+When everything is set, delete the local copies:
+  rm -rf "${OUT_DIR}" "$WORKDIR"
 EOF
