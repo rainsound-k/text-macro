@@ -36,7 +36,16 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -days 3650 -config "$WORKDIR/openssl.cnf" -extensions v3 >/dev/null 2>&1
 
 # 2) Bundle key + cert into a password-protected .p12.
-openssl pkcs12 -export \
+#    OpenSSL 3 defaults to a modern PKCS12 (AES-256 / SHA-256 MAC) that Apple's
+#    `security import` cannot read — it fails with "MAC verification failed"
+#    even when the password is correct. The -legacy flag emits the older
+#    SHA1/3DES format that macOS accepts. (LibreSSL / OpenSSL 1.1 already emit
+#    the legacy format and don't have the flag, so we add it only if supported.)
+LEGACY=""
+if openssl pkcs12 -help 2>&1 | grep -q -- '-legacy'; then
+  LEGACY="-legacy"
+fi
+openssl pkcs12 -export $LEGACY \
   -inkey "$WORKDIR/key.pem" -in "$WORKDIR/cert.pem" \
   -out "$WORKDIR/cert.p12" -name "$IDENTITY" \
   -passout "pass:${P12_PASS}" >/dev/null 2>&1
