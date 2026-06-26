@@ -106,9 +106,13 @@ jobs:
           releaseBody: |
             ## 설치 방법
 
-            ### macOS
-            - `TextMacro_*_aarch64.dmg` — Apple Silicon (M1/M2/M3)
-            - `TextMacro_*_x64.dmg` — Intel Mac
+            ### macOS (ZIP 권장)
+            - `TextMacro_macos-arm64.zip` — Apple Silicon (M1/M2/M3)
+            - `TextMacro_macos-x64.zip` — Intel Mac
+
+            압축을 풀어 **TextMacro.app**을 `응용 프로그램`으로 옮긴 뒤,
+            앱을 **우클릭 → 열기**로 한 번 실행하세요.
+            (DMG는 macOS Sequoia에서 마운트 경고를 우회하기 어려워 ZIP을 권장합니다.)
 
             ### Windows
             - `TextMacro_*_x64-setup.exe` — 설치 마법사
@@ -118,3 +122,24 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
+
+      # DMG는 macOS Sequoia부터 마운트 시 Gatekeeper 경고를 우회하기 어렵다.
+      # .app을 그대로 zip으로 묶어 올리면 사용자는 압축 해제(경고 없음) 후
+      # 앱 실행 경고 한 번만 처리하면 된다. ditto로 서명·리소스 포크를 보존한다.
+      - name: Package .app as zip (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP=$(ls -d "$APP_DIR"/*.app | head -n1)
+          ZIP="TextMacro_${{ matrix.label }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          echo "Created $ZIP"
+
+      - name: Upload zip to release (macOS)
+        if: runner.os == 'macOS'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: TextMacro_${{ matrix.label }}.zip
