@@ -164,18 +164,39 @@ fn reorder_macros(state: State<AppState>, ids: Vec<String>) -> Result<(), String
     Ok(())
 }
 
-#[tauri::command]
-fn export_macros(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let macros = state.macros.lock().unwrap().clone();
-    let data = ExportData { version: 1, macros };
-    let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+// Show the native file dialog without blocking the main thread, then await the
+// user's choice. `blocking_*` deadlocks the UI ("응답 없음") when the command runs
+// on the main thread, so we use the callback API + a channel instead.
+async fn await_dialog<F>(build: F) -> Option<tauri_plugin_dialog::FilePath>
+where
+    F: FnOnce(Box<dyn FnOnce(Option<tauri_plugin_dialog::FilePath>) + Send>),
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    build(Box::new(move |path| {
+        let _ = tx.send(path);
+    }));
+    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten()
+}
 
-    let path = app
-        .dialog()
-        .file()
-        .set_title("매크로 내보내기")
-        .set_file_name("macros.json")
-        .blocking_save_file();
+#[tauri::command]
+async fn export_macros(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let json = {
+        let macros = state.macros.lock().unwrap().clone();
+        let data = ExportData { version: 1, macros };
+        serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?
+    };
+
+    let path = await_dialog(|cb| {
+        app.dialog()
+            .file()
+            .set_title("매크로 내보내기")
+            .set_file_name("macros.json")
+            .save_file(cb);
+    })
+    .await;
 
     if let Some(fp) = path {
         let dest = fp.into_path().map_err(|e| e.to_string())?;
@@ -185,13 +206,15 @@ fn export_macros(app: AppHandle, state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn import_macros(app: AppHandle, state: State<AppState>) -> Result<Vec<Macro>, String> {
-    let path = app
-        .dialog()
-        .file()
-        .set_title("매크로 가져오기")
-        .add_filter("JSON", &["json"])
-        .blocking_pick_file();
+async fn import_macros(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<Macro>, String> {
+    let path = await_dialog(|cb| {
+        app.dialog()
+            .file()
+            .set_title("매크로 가져오기")
+            .add_filter("JSON", &["json"])
+            .pick_file(cb);
+    })
+    .await;
 
     let Some(fp) = path else {
         return Ok(state.macros.lock().unwrap().clone());
@@ -322,9 +345,14 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn show_settings(app: AppHandle) {
+    // Opening settings from the picker should dismiss the picker first.
+    if let Some(p) = app.get_webview_window("picker") {
+        let _ = p.hide();
+    }
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.show();
         let _ = w.set_focus();
+        let _ = w.unminimize();
     }
 }
 
@@ -447,6 +475,45 @@ fn center_on_cursor_screen(picker: &tauri::WebviewWindow) {
     let _ = picker.set_position(tauri::LogicalPosition::new(x, y));
 }
 
+// Re-register the global shortcut from saved settings. macOS silently drops
+// global shortcuts after the machine sleeps, so we call this on wake.
+fn reregister_global_shortcut(app: &AppHandle) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let hotkey = {
+        let state = app.state::<AppState>();
+        let s = state.settings.lock().unwrap();
+        s.hotkey.clone()
+    };
+    if let Ok(shortcut) = parse_shortcut_str(&hotkey) {
+        let gs = app.global_shortcut();
+        let _ = gs.unregister(shortcut.clone());
+        let _ = gs.register(shortcut);
+    }
+}
+
+// Watch for the system waking from sleep using a wall-clock jump heuristic:
+// if far more real time elapsed than we asked to sleep, the Mac was asleep,
+// so we re-register the (now-dead) global shortcut.
+fn spawn_wake_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let interval = std::time::Duration::from_secs(2);
+        loop {
+            let before = std::time::SystemTime::now();
+            std::thread::sleep(interval);
+            let slept_long = before
+                .elapsed()
+                .map(|e| e > interval + std::time::Duration::from_secs(5))
+                .unwrap_or(false);
+            if slept_long {
+                let app = app.clone();
+                let _ = app.clone().run_on_main_thread(move || {
+                    reregister_global_shortcut(&app);
+                });
+            }
+        }
+    });
+}
+
 // ── App setup ───────────────────────────────────────────────────────────────
 
 fn default_macros() -> Vec<Macro> {
@@ -461,6 +528,14 @@ fn default_macros() -> Vec<Macro> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Closing a window should hide it (so it can be reopened), not destroy
+        // it. This is a tray app — quitting happens via the tray "종료" menu.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
@@ -531,6 +606,9 @@ pub fn run() {
                 .unwrap_or_else(|_| Shortcut::new(Some(Modifiers::ALT), Code::Space));
             app.global_shortcut().register(shortcut)?;
 
+            // macOS drops global shortcuts after sleep; re-register them on wake.
+            spawn_wake_watcher(app.handle().clone());
+
             // System tray
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -545,6 +623,10 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
+                        // Dismiss the picker if it's open, then show settings.
+                        if let Some(p) = app.get_webview_window("picker") {
+                            let _ = p.hide();
+                        }
                         if let Some(w) = app.get_webview_window("settings") {
                             let _ = w.show();
                             let _ = w.set_focus();

@@ -120,10 +120,36 @@ npm run tauri icon app-icon.png
 빌드해 **Draft 릴리스**로 업로드합니다.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 이후 GitHub의 Releases에서 초안을 확인하고 게시하세요.
+
+---
+
+## 🔏 macOS 코드 서명 (권한 유지, 선택)
+
+서명되지 않은 빌드는 매 업데이트마다 실행 파일 해시가 바뀌어, **새 DMG를 설치할 때마다
+손쉬운 사용 권한을 다시 요청**합니다. 같은 **self-signed 인증서**로 매번 서명하면 앱의
+코드 식별자가 고정되어 권한이 업데이트 후에도 유지됩니다. (무료, Apple 개발자 계정 불필요.
+단, Gatekeeper "미확인 개발자" 경고는 그대로이며 첫 실행만 우클릭 → 열기 필요.)
+
+**설정 방법 (최초 1회):**
+
+1. 인증서를 생성하고 시크릿 값을 출력합니다.
+   ```bash
+   bash scripts/create-macos-cert.sh
+   ```
+2. 출력된 4개 값을 GitHub 저장소 시크릿으로 등록합니다.
+   `Settings → Secrets and variables → Actions → New repository secret`
+   - `APPLE_SIGNING_IDENTITY`
+   - `APPLE_CERTIFICATE` (base64 블록 전체)
+   - `APPLE_CERTIFICATE_PASSWORD`
+   - `KEYCHAIN_PASSWORD`
+3. 다음 릴리스부터 자동으로 서명되어 빌드됩니다.
+
+> 시크릿이 등록되지 않은 상태에서도 빌드는 정상 동작합니다(서명 없이 ad-hoc 빌드).
+> 릴리스 워크플로우(`.github/workflows/release.yml`)가 시크릿 유무를 자동 판별합니다.
 
 ---
 
