@@ -48,17 +48,49 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      # Set up the self-signed signing identity ourselves. tauri-action's own
+      # importer doesn't trust the cert, so `security find-identity -v` wouldn't
+      # list it ("failed to resolve signing identity"). We import it AND mark it
+      # trusted for code signing, which makes it a valid identity. Signing with
+      # the same cert every release keeps the macOS Accessibility permission.
+      - name: Set up macOS signing keychain
+        if: runner.os == 'macOS'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing (self-signed). When these secrets are set, the
-          # .app is signed with a stable identity so the Accessibility permission
-          # survives updates. If unset, the build still works (ad-hoc, unsigned).
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "No signing secrets set — building unsigned (ad-hoc)."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/textmacro-signing.keychain-db"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Trust the self-signed cert for code signing so it's a valid identity.
+          security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p "$KEYCHAIN" > "$RUNNER_TEMP/cert.cer"
+          security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$RUNNER_TEMP/cert.cer"
+          # Put our keychain first in the search list so tauri/codesign find it.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/cert.cer"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Identity name only — the keychain (with the trusted cert) is already
+          # set up above. Passing APPLE_CERTIFICATE here would make tauri-action
+          # create its own untrusted keychain and fail to resolve the identity.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "TextMacro ${{ github.ref_name }}"
