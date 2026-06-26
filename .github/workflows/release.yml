@@ -8,8 +8,14 @@ on:
 permissions:
   contents: write
 
+# A new push for the same tag cancels an earlier, still-running build.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -76,12 +82,15 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           # Trust the self-signed cert for code signing so it's a valid identity.
+          # Must use the admin domain (-d) via sudo: a per-user trust change opens
+          # a GUI authorization prompt that never returns on a headless runner.
           security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p "$KEYCHAIN" > "$RUNNER_TEMP/cert.cer"
-          security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$RUNNER_TEMP/cert.cer"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.cer"
           # Put our keychain first in the search list so tauri/codesign find it.
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/cert.cer"
-          security find-identity -v -p codesigning "$KEYCHAIN"
+          security find-identity -v -p codesigning
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
