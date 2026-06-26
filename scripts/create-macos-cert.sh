@@ -40,29 +40,40 @@ openssl pkcs12 -export \
   -out "$WORKDIR/cert.p12" -name "$IDENTITY" \
   -passout "pass:${P12_PASS}" >/dev/null 2>&1
 
-B64="$(base64 < "$WORKDIR/cert.p12")"
+# base64 with NO line wrapping, so it's a single clean blob (no stray newlines
+# or marker lines that could get pasted into the secret by mistake).
+B64="$(base64 < "$WORKDIR/cert.p12" | tr -d '\n')"
+
+# Save it to a file and copy it straight to the clipboard so there's nothing to
+# hand-select. The earlier "decode base64" failures came from copying the
+# surrounding ----- marker lines; this avoids that entirely.
+OUT_DIR="${HOME}/textmacro-signing"
+mkdir -p "$OUT_DIR"
+printf '%s' "$B64" > "$OUT_DIR/APPLE_CERTIFICATE.txt"
+printf '%s' "$B64" | pbcopy 2>/dev/null && COPIED="yes" || COPIED="no"
 
 cat <<EOF
 
 ✅  Self-signed code-signing certificate created: "${IDENTITY}"
 
-Register these as GitHub repository secrets
+Register these 4 GitHub repository secrets
 (Settings → Secrets and variables → Actions → New repository secret):
 
-  APPLE_SIGNING_IDENTITY        ${IDENTITY}
-  APPLE_CERTIFICATE_PASSWORD    ${P12_PASS}
-  KEYCHAIN_PASSWORD             ${KEYCHAIN_PW}
-  APPLE_CERTIFICATE             ← the base64 block below (copy all lines)
+  1. APPLE_SIGNING_IDENTITY        ${IDENTITY}
+  2. APPLE_CERTIFICATE_PASSWORD    ${P12_PASS}
+  3. KEYCHAIN_PASSWORD             ${KEYCHAIN_PW}
+  4. APPLE_CERTIFICATE             (base64 — see below)
 
------ BEGIN APPLE_CERTIFICATE (base64) -----
-${B64}
------ END APPLE_CERTIFICATE -----
+  ⚠️  For APPLE_CERTIFICATE, paste ONLY the base64 text. Do NOT include any
+      "-----" lines. To avoid mistakes it has been:
+        • copied to your clipboard: ${COPIED}  (just ⌘V into the secret box)
+        • saved to: ${OUT_DIR}/APPLE_CERTIFICATE.txt
+          (or run:  pbcopy < "${OUT_DIR}/APPLE_CERTIFICATE.txt" )
 
 Optional — sign LOCAL builds too:
   cp "$WORKDIR/cert.p12" ~/textmacro-cert.p12
   security import ~/textmacro-cert.p12 -P "${P12_PASS}" -T /usr/bin/codesign
   APPLE_SIGNING_IDENTITY="${IDENTITY}" npm run tauri build
 
-Temp files: $WORKDIR
-Delete them when done:  rm -rf "$WORKDIR"
+Temp files: $WORKDIR  (delete when done:  rm -rf "$WORKDIR")
 EOF
