@@ -13,11 +13,19 @@ export default function MacroPicker() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const filtered = macros.filter(
-    (m) =>
-      m.title.toLowerCase().includes(query.toLowerCase()) ||
-      m.content.toLowerCase().includes(query.toLowerCase())
-  );
+  const q = query.toLowerCase();
+  const filtered = macros
+    .filter(
+      (m) =>
+        m.title.toLowerCase().includes(q) ||
+        m.content.toLowerCase().includes(q)
+    )
+    .sort((a, b) => {
+      // Title matches rank above body-only matches
+      const aTitle = a.title.toLowerCase().includes(q) ? 0 : 1;
+      const bTitle = b.title.toLowerCase().includes(q) ? 0 : 1;
+      return aTitle - bTitle;
+    });
 
   // Load macros on mount
   useEffect(() => {

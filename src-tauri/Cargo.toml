@@ -1,6 +1,6 @@
 [package]
 name = "text-macro-tauri"
-version = "1.0.2"
+version = "1.0.3"
 description = "TextMacro - cross-platform text macro app"
 authors = ["sungwookang"]
 edition = "2021"
